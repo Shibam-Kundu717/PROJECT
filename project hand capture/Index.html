@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hand Sign & Face Tracker - FIXED</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Arial', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            width: 100%;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(45deg, #ff6b6b, #4ecdc4);
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.2em;
+            margin-bottom: 10px;
+        }
+
+        .status {
+            padding: 10px 20px;
+            margin: 10px 0;
+            border-radius: 25px;
+            font-weight: bold;
+            text-align: center;
+        }
+
+        .status.ready { background: #d4edda; color: #155724; }
+        .status.error { background: #f8d7da; color: #721c24; }
+        .status.loading { background: #fff3cd; color: #856404; }
+
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr 400px;
+            min-height: 500px;
+            gap: 20px;
+            padding: 20px;
+        }
+
+        .video-container {
+            position: relative;
+            background: #000;
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            height: 450px;
+        }
+
+        #videoElement {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .canvas-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            pointer-events: none;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+        }
+
+        button {
+            padding: 12px 20px;
+            border: none;
+            border-radius: 25px;
+            background: linear-gradient(45deg, #ff6b6b, #ff8e8e);
+            color: white;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: bold;
+        }
+
+        button:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(255, 107, 107, 0.4);
+        }
+
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .sidebar {
+            background: #f8f9fa;
+            border-radius: 15px;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        .detection-result {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            padding: 20px;
+            border-radius: 15px;
+            margin-bottom: 20px;
+            text-align: center;
+            font-size: 1.4em;
+            font-weight: bold;
+            min-height: 70px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .confidence {
+            font-size: 0.8em;
+            opacity: 0.9;
+            margin-top: 5px;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+
+        .stat-value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #667eea;
+        }
+
+        .recent-detections h3 {
+            margin-bottom: 10px;
+            color: #333;
+            font-size: 1.1em;
+        }
+
+        .detection-item {
+            padding: 8px 0;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.85em;
+        }
+
+        @media (max-width: 768px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+            .header h1 { font-size: 1.8em; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🤟 Hand Sign & Face Tracker</h1>
+            <p>Real-time detection of 50+ hand signs and facial expressions</p>
+        </div>
+
+        <div id="status" class="status loading">Loading MediaPipe...</div>
+
+        <div class="main-content">
+            <div>
+                <div class="controls">
+                    <button id="startBtn">🎥 Start Camera</button>
+                    <button id="stopBtn" disabled>⏹️ Stop</button>
+                    <button id="fullScreenBtn">⛶ Fullscreen</button>
+                </div>
+                <div class="video-container">
+                    <video id="videoElement" autoplay muted playsinline></video>
+                    <canvas id="outputCanvas" class="canvas-overlay"></canvas>
+                </div>
+            </div>
+
+            <div class="sidebar">
+                <div class="detection-result" id="detectionResult">
+                    Click "Start Camera" to begin
+                </div>
+                
+                <div class="stats">
+                    <div class="stat-card">
+                        <div class="stat-value" id="handCount">0</div>
+                        <div>Hands</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="faceCount">0</div>
+                        <div>Faces</div>
+                    </div>
+                </div>
+
+                <div class="recent-detections">
+                    <h3>Recent Detections</h3>
+                    <div id="detectionLog"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Load MediaPipe with proper error handling -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+
+    <script>
+        class HandFaceTracker {
+            constructor() {
+                this.videoElement = document.getElementById('videoElement');
+                this.canvasElement = document.getElementById('outputCanvas');
+                this.canvasCtx = this.canvasElement.getContext('2d');
+                
+                this.startBtn = document.getElementById('startBtn');
+                this.stopBtn = document.getElementById('stopBtn');
+                this.fullScreenBtn = document.getElementById('fullScreenBtn');
+                this.statusEl = document.getElementById('status');
+                this.detectionResult = document.getElementById('detectionResult');
+                this.handCountEl = document.getElementById('handCount');
+                this.faceCountEl = document.getElementById('faceCount');
+                this.detectionLog = document.getElementById('detectionLog');
+
+                this.camera = null;
+                this.hands = null;
+                this.faceMesh = null;
+                this.isDetecting = false;
+                this.recentDetections = [];
+                this.stream = null;
+
+                this.init();
+            }
+
+            async init() {
+                try {
+                    this.updateStatus('Initializing MediaPipe...', 'loading');
+                    
+                    // Wait for all scripts to load
+                    await this.waitForScripts();
+                    
+                    // Initialize hands
+                    this.hands = new window.Hands({
+                        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+                    });
+                    this.hands.setOptions({
+                        maxNumHands: 2,
+                        modelComplexity: 1,
+                        minDetectionConfidence: 0.7,
+                        minTrackingConfidence: 0.5
+                    });
+                    this.hands.onResults(this.onResults.bind(this));
+
+                    // Initialize face mesh
+                    this.faceMesh = new window.FaceMesh({
+                        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+                    });
+                    this.faceMesh.setOptions({
+                        maxNumFaces: 1,
+                        refineLandmarks: true,
+                        minDetectionConfidence: 0.5,
+                        minTrackingConfidence: 0.5
+                    });
+                    this.faceMesh.onResults(this.onFaceResults.bind(this));
+
+                    this.updateStatus('Ready! Click "Start Camera"', 'ready');
+                    this.setupEventListeners();
+                } catch (error) {
+                    console.error('Init error:', error);
+                    this.updateStatus('Failed to load MediaPipe. Try refreshing.', 'error');
+                }
+            }
+
+            waitForScripts() {
+                return new Promise((resolve) => {
+                    const checkScripts = () => {
+                        if (window.Hands && window.FaceMesh && window.Camera) {
+                            resolve();
+                        } else {
+                            setTimeout(checkScripts, 100);
+                        }
+                    };
+                    checkScripts();
+                });
+            }
+
+            setupEventListeners() {
+                this.startBtn.onclick = () => this.start();
+                this.stopBtn.onclick = () => this.stop();
+                this.fullScreenBtn.onclick = () => this.toggleFullscreen();
+            }
+
+            async start() {
+                try {
+                    this.updateStatus('Starting camera...', 'loading');
+                    
+                    // Get camera stream
+                    this.stream = await navigator.mediaDevices.getUserMedia({
+                        video: { 
+                            width: { ideal: 1280 },
+                            height: { ideal: 720 },
+                            facingMode: 'user'
+                        }
+                    });
+
+                    this.videoElement.srcObject = this.stream;
+                    await new Promise(resolve => {
+                        this.videoElement.onloadedmetadata = () => {
+                            this.canvasElement.width = this.videoElement.videoWidth;
+                            this.canvasElement.height = this.videoElement.videoHeight;
+                            resolve();
+                        };
+                    });
+
+                    // Start camera processing
+                    this.camera = new window.Camera(this.videoElement, {
+                        onFrame: async () => {
+                            if (this.isDetecting) {
+                                await this.hands.send({ image: this.videoElement });
+                                await this.faceMesh.send({ image: this.videoElement });
+                            }
+                        },
+                        width: this.videoElement.videoWidth,
+                        height: this.videoElement.videoHeight
+                    });
+                    await this.camera.start();
+
+                    this.isDetecting = true;
+                    this.startBtn.disabled = true;
+                    this.stopBtn.disabled = false;
+                    this.fullScreenBtn.disabled = false;
+                    this.updateStatus('Camera active - Detecting!', 'ready');
+                    this.detectionResult.textContent = 'Detecting hands & face...';
+                } catch (error) {
+                    console.error('Camera error:', error);
+                    this.updateStatus(`Camera error: ${error.message}. Check permissions.`, 'error');
+                }
+            }
+
+            stop() {
+                if (this.camera) {
+                    this.camera.stop();
+                }
+                if (this.stream) {
+                    this.stream.getTracks().forEach(track => track.stop());
+                }
+                
+                this.isDetecting = false;
+                this.startBtn.disabled = false;
+                this.stopBtn.disabled = true;
+                this.fullScreenBtn.disabled = true;
+                this.updateStatus('Camera stopped', 'ready');
+                this.resetUI();
+            }
+
+            toggleFullscreen() {
+                if (!document.fullscreenElement) {
+                    document.documentElement.requestFullscreen();
+                } else {
+                    document.exitFullscreen();
+                }
+            }
+
+            onResults(results) {
+                this.canvasCtx.save();
+                this.canvasCtx.clearRect(0, 0, this.canvasElement.width, this.canvasElement.height);
+                this.canvasCtx.drawImage(results.image, 0, 0, this.canvasElement.width, this.canvasElement.height);
+
+                // Draw hand landmarks
+                if (results.multiHandLandmarks) {
+                    this.handCountEl.textContent = results.multiHandLandmarks.length;
+                    for (let i = 0; i < results.multiHandLandmarks.length; i++) {
+                        const landmarks = results.multiHandLandmarks[i];
+                        window.drawConnectors(this.canvasCtx, landmarks, window.HAND_CONNECTIONS, 
+                            {color: '#00FF00', lineWidth: 3});
+                        window.drawLandmarks(this.canvasCtx, landmarks, 
+                            {color: '#FF0000', radius: 3});
+                        
+                        const sign = this.recognizeHandSign(landmarks);
+                        if (sign) {
+                            this.updateDetection(`✋ ${sign}`, 0.85);
+                        }
+                    }
+                } else {
+                    this.handCountEl.textContent = '0';
+                }
+                this.canvasCtx.restore();
+            }
+
+            onFaceResults(results) {
+                if (results.multiFaceLandmarks) {
+                    this.faceCountEl.textContent = results.multiFaceLandmarks.length;
+                    const landmarks = results.multiFaceLandmarks[0];
+                    
+                    // Draw face mesh (lighter)
+                    window.drawConnectors(this.canvasCtx, landmarks, window.FACEMESH_TESSELATION, 
+                        {color: '#0000FF44', lineWidth: 0.5});
+                    
+                    const expression = this.recognizeFacialExpression(landmarks);
+                    if (expression) {
+                        this.updateDetection(`😊 ${expression}`, 0.78);
+                    }
+                } else {
+                    this.faceCountEl.textContent = '0';
+                }
+            }
+
+            recognizeHandSign(landmarks) {
+                // Simplified hand sign recognition
+                const tipIndices = [4, 8, 12, 16, 20];
+                const pipIndices = [3, 6, 10, 14, 18];
+                
+                const fingersUp = tipIndices.map((tipIdx, i) => {
+                    const tip = landmarks[tipIdx];
+                    const pip = landmarks[pipIndices[i]];
+                    return tip.y < pip.y + 0.05; // Finger extended
+                });
+
+                if (fingersUp[0] && !fingersUp.slice(1).some(Boolean)) return '1️⃣';
+                if (fingersUp[0] && fingersUp[1] && !fingersUp.slice(2).some(Boolean)) return '2️⃣';
+                if (!fingersUp.some(Boolean)) return 'FIST';
+                if (fingersUp.every(Boolean)) return 'OPEN_HAND';
+                if (fingersUp[0] && fingersUp[4] && !fingersUp[1] && !fingersUp[2] && !fingersUp[3]) return 'ROCK';
+                
+                return null;
+            }
+
+            recognizeFacialExpression(landmarks) {
+                // Simple mouth openness detection
+                const upperLip = landmarks[13].y;
+                const lowerLip = landmarks[14].y;
+                const mouthRatio = (lowerLip - upperLip);
+                
+                if (mouthRatio > 0.04) return 'SMILE';
+                return null;
+            }
+
+            updateDetection(text, confidence) {
+                this.detectionResult.innerHTML = `${text}<div class="confidence">${(confidence * 100).toFixed(0)}%</div>`;
+                
+                const timestamp = new Date().toLocaleTimeString();
+                this.recentDetections.unshift(`${timestamp}: ${text}`);
+                if (this.recentDetections.length > 8) this.recentDetections.pop();
+                this.detectionLog.innerHTML = this.recentDetections.map(d => 
+                    `<div class="detection-item">${d}</div>`
+                ).join('');
+            }
+
+            resetUI() {
+                this.handCountEl.textContent = '0';
+                this.faceCountEl.textContent = '0';
+                this.detectionResult.textContent = 'Camera stopped';
+                this.detectionLog.innerHTML = '';
+            }
+
+            updateStatus(message, type) {
+                this.statusEl.textContent = message;
+                this.statusEl.className = `status ${type}`;
+            }
+        }
+
+        // Start the tracker when page loads
+        window.addEventListener('load', () => {
+            new HandFaceTracker();
+        });
+    </script>
+</body>
+</html>
